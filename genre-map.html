@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genre Map</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #060d0a; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+new p5(function(p) {
+
+  // ── Node definitions ──────────────────────────────────────────────
+  const NODE_DATA = [
+    { name: 'Jazz',             rx: 0.25, ry: 0.22, type: 0 },
+    { name: 'Funk',             rx: 0.46, ry: 0.66, type: 0 },
+    { name: 'Hip-Hop',          rx: 0.76, ry: 0.21, type: 0 },
+    { name: 'Soul',             rx: 0.36, ry: 0.30, type: 1 },
+    { name: 'R&B',              rx: 0.59, ry: 0.46, type: 1 },
+    { name: 'Neo Soul',         rx: 0.56, ry: 0.33, type: 1 },
+    { name: 'Lo-Fi HH',         rx: 0.63, ry: 0.11, type: 1 },
+    { name: 'Acid Jazz',        rx: 0.33, ry: 0.43, type: 1 },
+    { name: 'G-Funk',           rx: 0.56, ry: 0.76, type: 1 },
+    { name: 'Blues',            rx: 0.08, ry: 0.32, type: 2 },
+    { name: 'Swing',            rx: 0.11, ry: 0.14, type: 2 },
+    { name: 'Bossa Nova',       rx: 0.18, ry: 0.07, type: 2 },
+    { name: 'Nu Jazz',          rx: 0.20, ry: 0.38, type: 2 },
+    { name: 'Gospel',           rx: 0.28, ry: 0.56, type: 2 },
+    { name: 'Disco',            rx: 0.38, ry: 0.80, type: 2 },
+    { name: 'Quiet Storm',      rx: 0.46, ry: 0.22, type: 2 },
+    { name: 'Contemporary R&B', rx: 0.69, ry: 0.36, type: 2 },
+    { name: 'Jazz-Rap',         rx: 0.53, ry: 0.14, type: 2 },
+    { name: 'Boom Bap',         rx: 0.83, ry: 0.31, type: 2 },
+    { name: 'Trap',             rx: 0.89, ry: 0.18, type: 2 },
+    { name: 'Grime',            rx: 0.91, ry: 0.07, type: 2 },
+  ];
+
+  function idx(name) { return NODE_DATA.findIndex(n => n.name === name); }
+
+  // ── Edge definitions ──────────────────────────────────────────────
+  const EDGE_DEFS = [
+    ['Jazz',    'Blues',            'bridge-sat'],
+    ['Jazz',    'Swing',            'bridge-sat'],
+    ['Jazz',    'Bossa Nova',       'bridge-sat'],
+    ['Jazz',    'Nu Jazz',          'bridge-sat'],
+    ['Jazz',    'Soul',             'main-bridge'],
+    ['Jazz',    'Acid Jazz',        'main-bridge'],
+    ['Jazz',    'Jazz-Rap',         'bridge-sat'],
+    ['Jazz',    'Lo-Fi HH',         'main-bridge'],
+    ['Soul',    'Gospel',           'bridge-sat'],
+    ['Soul',    'Quiet Storm',      'bridge-sat'],
+    ['Soul',    'R&B',              'bridge-bridge'],
+    ['Soul',    'Neo Soul',         'bridge-bridge'],
+    ['Soul',    'Funk',             'main-bridge'],
+    ['Funk',    'Gospel',           'bridge-sat'],
+    ['Funk',    'Disco',            'bridge-sat'],
+    ['Funk',    'G-Funk',           'main-bridge'],
+    ['Funk',    'Acid Jazz',        'main-bridge'],
+    ['Funk',    'R&B',              'main-bridge'],
+    ['R&B',     'Contemporary R&B', 'bridge-sat'],
+    ['R&B',     'Quiet Storm',      'bridge-sat'],
+    ['R&B',     'Neo Soul',         'bridge-bridge'],
+    ['R&B',     'Hip-Hop',          'main-bridge'],
+    ['Neo Soul','Contemporary R&B', 'bridge-sat'],
+    ['Hip-Hop', 'Boom Bap',         'bridge-sat'],
+    ['Hip-Hop', 'Trap',             'bridge-sat'],
+    ['Hip-Hop', 'Grime',            'bridge-sat'],
+    ['Hip-Hop', 'G-Funk',           'main-bridge'],
+    ['Hip-Hop', 'Jazz-Rap',         'main-bridge'],
+    ['Hip-Hop', 'Lo-Fi HH',         'main-bridge'],
+    ['Lo-Fi HH','Jazz-Rap',         'sat-sat'],
+    ['G-Funk',  'Boom Bap',         'sat-sat'],
+  ];
+
+  const EDGE_WEIGHT = {
+    'main-bridge':  { stroke: 2.5, alpha: 0.35 },
+    'bridge-bridge':{ stroke: 1.5, alpha: 0.22 },
+    'bridge-sat':   { stroke: 0.8, alpha: 0.15 },
+    'sat-sat':      { stroke: 0.5, alpha: 0.10 },
+  };
+
+  // ── State ─────────────────────────────────────────────────────────
+  let nodes = [];
+  let edges = [];
+  let particles = [];
+  let ripples = [];  // click ripple effects
+
+  // appState: 0=idle, 1=revealing, 2=revealed
+  let appState = 0;
+  let revealStart = -1;
+  const revealDuration = 2000;
+
+  let highlightedNode = null;
+  let prevHighlightNode = null;
+  let highlightStart = 0;
+  let prevHighlightStart = 0;
+  const highlightFadeDur = 800;
+
+  // dim transition: when something is selected, non-related nodes dim
+  let dimStart = 0;
+  let dimT = 0;  // 0..1, how much dimming is applied
+  let dimDir = 0; // 1=dimming in, -1=dimming out
+  const dimDur = 600;
+
+  let hovered = null;
+
+  // ── Setup ─────────────────────────────────────────────────────────
+  p.setup = function() {
+    p.createCanvas(p.windowWidth, p.windowHeight);
+    p.noFill();
+    p.textFont('Syne');
+    p.colorMode(p.RGB, 255, 255, 255, 1);
+    buildScene();
+  };
+
+  function buildScene() {
+    nodes = NODE_DATA.map((d, i) => ({
+      ...d,
+      id: i,
+      x: d.rx * p.width,
+      y: d.ry * p.height,
+      noiseOff: p.random(0, 1000),
+      baseRadius: d.type === 0 ? 18 : d.type === 1 ? 10 : 6,
+      highlightT: 0,
+      prevT: 0,
+    }));
+
+    edges = EDGE_DEFS.map(([na, nb, ctype]) => {
+      const ai = idx(na), bi = idx(nb);
+      const ax = nodes[ai].x, ay = nodes[ai].y;
+      const bx = nodes[bi].x, by = nodes[bi].y;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      const nx = -dy / len;
+      const ny_ =  dx / len;
+      const bendAmt = (Math.abs(ax - bx) + Math.abs(ay - by)) * 0.08;
+      const sign = ((ai + bi) % 2 === 0) ? 1 : -1;
+      return {
+        ai, bi, ctype,
+        cx: mx + nx * bendAmt * sign,
+        cy: my + ny_ * bendAmt * sign,
+        noiseOff: p.random(0, 1000),
+      };
+    });
+
+    particles = [];
+    for (let i = 0; i < 80; i++) {
+      particles.push({
+        x: p.random(p.width),
+        y: p.random(p.height),
+        r: p.random(1, 2),
+        noiseX: p.random(0, 1000),
+        noiseY: p.random(500, 1500),
+        speed: p.random(0.2, 0.5),
+      });
+    }
+  }
+
+  p.windowResized = function() {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
+    nodes.forEach(n => { n.x = n.rx * p.width; n.y = n.ry * p.height; });
+    edges.forEach(e => {
+      const na = nodes[e.ai], nb = nodes[e.bi];
+      const ax = na.x, ay = na.y, bx = nb.x, by = nb.y;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      const dx = bx - ax, dy = by - ay;
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      const nx_ = -dy / len, ny_ = dx / len;
+      const bendAmt = (Math.abs(ax - bx) + Math.abs(ay - by)) * 0.08;
+      const sign = ((e.ai + e.bi) % 2 === 0) ? 1 : -1;
+      e.cx = mx + nx_ * bendAmt * sign;
+      e.cy = my + ny_ * bendAmt * sign;
+    });
+  };
+
+  // ── Draw ──────────────────────────────────────────────────────────
+  p.draw = function() {
+    p.push();
+    p.noStroke();
+    p.fill(6, 13, 10, 25/255);
+    p.rect(0, 0, p.width, p.height);
+    p.pop();
+
+    const t = p.millis();
+
+    // Reveal alpha
+    let globalAlpha;
+    if (appState === 0) {
+      globalAlpha = 0;
+    } else if (appState === 1) {
+      const prog = (t - revealStart) / revealDuration;
+      globalAlpha = easeOut(p.constrain(prog, 0, 1));
+      if (prog >= 1) appState = 2;
+    } else {
+      globalAlpha = 1;
+    }
+
+    const baseMapAlpha  = appState === 0 ? 0.3 : globalAlpha;
+    const baseEdgeAlpha = appState === 0 ? 0.1 : globalAlpha;
+
+    // Highlight transitions
+    nodes.forEach(n => {
+      n.highlightT = (highlightedNode === n)
+        ? p.constrain((t - highlightStart) / highlightFadeDur, 0, 1) : 0;
+      n.prevT = (prevHighlightNode === n)
+        ? 1 - p.constrain((t - prevHighlightStart) / highlightFadeDur, 0, 1) : 0;
+    });
+
+    // Dim transition
+    if (dimDir !== 0) {
+      const dp = (t - dimStart) / dimDur;
+      dimT = dimDir === 1 ? easeOut(p.constrain(dp, 0, 1))
+                          : 1 - easeOut(p.constrain(dp, 0, 1));
+      if (dp >= 1) dimDir = 0;
+    }
+
+    // Hover detection
+    hovered = null;
+    p.cursor(p.ARROW);
+    nodes.forEach(n => {
+      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < getPulseRadius(n, t) + 10) {
+        hovered = n;
+        p.cursor(p.HAND);
+      }
+    });
+
+    drawParticles(t, baseEdgeAlpha);
+    drawEdges(t, baseEdgeAlpha);
+    drawNodes(t, baseMapAlpha);
+    drawRipples(t);
+
+    if (appState === 0) drawIdleText(t);
+  };
+
+  // ── Ripples ───────────────────────────────────────────────────────
+  function spawnRipple(x, y) {
+    ripples.push({ x, y, born: p.millis(), dur: 900 });
+  }
+
+  function drawRipples(t) {
+    ripples = ripples.filter(r => t - r.born < r.dur);
+    ripples.forEach(r => {
+      const prog = (t - r.born) / r.dur;
+      const ease = easeOut(prog);
+      const radius = ease * 60;
+      const alpha  = (1 - prog) * 0.5;
+      p.push();
+      p.noFill();
+      p.stroke(120, 230, 160, alpha);
+      p.strokeWeight(1.5 * (1 - prog));
+      p.ellipse(r.x, r.y, radius * 2);
+      p.pop();
+
+      // Second, larger ring
+      const r2 = ease * 90;
+      const a2 = (1 - prog) * 0.25;
+      p.push();
+      p.noFill();
+      p.stroke(80, 180, 120, a2);
+      p.strokeWeight(1);
+      p.ellipse(r.x, r.y, r2 * 2);
+      p.pop();
+    });
+  }
+
+  // ── Particles ─────────────────────────────────────────────────────
+  function drawParticles(t, globalA) {
+    const ns = t * 0.0003;
+    particles.forEach(pt => {
+      const vx = (p.noise(pt.noiseX + ns) - 0.5) * 2 * pt.speed;
+      const vy = (p.noise(pt.noiseY + ns) - 0.5) * 2 * pt.speed;
+      pt.x = (pt.x + vx + p.width)  % p.width;
+      pt.y = (pt.y + vy + p.height) % p.height;
+      p.push();
+      p.noStroke();
+      p.fill(80, 160, 110, 0.08 * globalA);
+      p.ellipse(pt.x, pt.y, pt.r * 2);
+      p.pop();
+    });
+  }
+
+  // ── Edges ─────────────────────────────────────────────────────────
+  // Returns whether this edge is connected to the highlighted node
+  function edgeIsConnected(e) {
+    if (!highlightedNode) return false;
+    return e.ai === highlightedNode.id || e.bi === highlightedNode.id;
+  }
+
+  function drawEdges(t, globalA) {
+    const ns = t * 0.00012;
+    edges.forEach(e => {
+      const w = EDGE_WEIGHT[e.ctype];
+      const pulseFactor = 1 + 0.2 * Math.sin(p.noise(e.noiseOff + ns) * p.TWO_PI);
+      let alpha = w.alpha * pulseFactor * globalA;
+
+      const connected = edgeIsConnected(e);
+
+      if (highlightedNode) {
+        // Connected edges: boost to 0.7; unconnected: dim down
+        if (connected) {
+          alpha = p.lerp(alpha, 0.7 * globalA, highlightedNode.highlightT);
+        } else {
+          alpha = p.lerp(alpha, alpha * 0.2, dimT);
+        }
+      }
+
+      // Previous highlight fade-out
+      if (prevHighlightNode) {
+        const wasConnected = e.ai === prevHighlightNode.id || e.bi === prevHighlightNode.id;
+        if (wasConnected) {
+          alpha = p.lerp(alpha, 0.7 * globalA, prevHighlightNode.prevT);
+        }
+      }
+
+      const na = nodes[e.ai], nb = nodes[e.bi];
+      p.push();
+      p.noFill();
+      p.stroke(80, 180, 120, alpha);
+      p.strokeWeight(connected && highlightedNode ? w.stroke * p.lerp(1, 1.6, highlightedNode.highlightT) : w.stroke);
+      p.beginShape();
+      p.curveVertex(na.x, na.y);
+      p.curveVertex(na.x, na.y);
+      p.curveVertex(e.cx, e.cy);
+      p.curveVertex(nb.x, nb.y);
+      p.curveVertex(nb.x, nb.y);
+      p.endShape();
+      p.pop();
+    });
+  }
+
+  // ── Nodes ─────────────────────────────────────────────────────────
+  function getPulseRadius(n, t) {
+    const pulse = 1 + 0.1 * (p.noise(t * 0.0005 + n.noiseOff) * 2 - 1);
+    return n.baseRadius * pulse;
+  }
+
+  // Returns whether a node is directly connected to the highlighted node
+  function nodeIsConnected(n) {
+    if (!highlightedNode) return false;
+    if (n === highlightedNode) return true;
+    return edges.some(e =>
+      (e.ai === highlightedNode.id && e.bi === n.id) ||
+      (e.bi === highlightedNode.id && e.ai === n.id)
+    );
+  }
+
+  function drawNodes(t, globalA) {
+    nodes.forEach(n => {
+      let r = getPulseRadius(n, t);
+      const ht  = n.highlightT;
+      const pt2 = n.prevT;
+
+      const isMain = n.type === 0;
+      const baseGlow = n.type === 0 ? 20 : n.type === 1 ? 10 : 0;
+      const maxGlow  = isMain ? 45 : 30;
+
+      let highlightScale = 1;
+      let extraGlow = 0;
+
+      if (ht > 0) {
+        highlightScale = p.lerp(1, isMain ? 1.35 : 1.25, ht);
+        extraGlow = p.lerp(0, maxGlow - baseGlow, ht);
+      } else if (pt2 > 0) {
+        highlightScale = p.lerp(1, isMain ? 1.35 : 1.25, pt2);
+        extraGlow = p.lerp(0, maxGlow - baseGlow, pt2);
+      }
+
+      r *= highlightScale;
+      if (n === hovered && !highlightedNode) extraGlow += 8;
+
+      // Dim non-connected nodes when something is selected
+      let dimFactor = 1;
+      if (highlightedNode && dimT > 0 && !nodeIsConnected(n)) {
+        dimFactor = p.lerp(1, 0.2, dimT);
+      }
+
+      let fillC, strokeC, glowC, glowBlur;
+      if (n.type === 0) {
+        const fi = ht > 0 ? p.lerp(0.15, 0.35, ht) : 0.15;
+        const si = ht > 0 ? p.lerp(0.6, 1.0, ht) : 0.6;
+        fillC   = [80, 180, 120, fi * globalA * dimFactor];
+        strokeC = [120, 220, 160, si * globalA * dimFactor];
+        glowC   = `rgba(100,220,150,${0.5 * globalA * dimFactor})`;
+        glowBlur = baseGlow + extraGlow;
+      } else if (n.type === 1) {
+        const fi = ht > 0 ? p.lerp(0.12, 0.28, ht) : 0.12;
+        const si = ht > 0 ? p.lerp(0.4, 0.8, ht) : 0.4;
+        fillC   = [40, 120, 80, fi * globalA * dimFactor];
+        strokeC = [80, 160, 110, si * globalA * dimFactor];
+        glowC   = `rgba(80,180,120,${0.3 * globalA * dimFactor})`;
+        glowBlur = baseGlow + extraGlow;
+      } else {
+        const fi = ht > 0 ? p.lerp(0.10, 0.25, ht) : 0.10;
+        const si = ht > 0 ? p.lerp(0.3, 0.7, ht) : 0.3;
+        fillC   = [20, 80, 50, fi * globalA * dimFactor];
+        strokeC = [60, 120, 80, si * globalA * dimFactor];
+        glowC   = ht > 0 ? `rgba(100,220,150,${0.4 * globalA * dimFactor})` : null;
+        glowBlur = extraGlow;
+      }
+
+      p.push();
+      if (glowBlur > 0) {
+        p.drawingContext.shadowBlur  = glowBlur;
+        p.drawingContext.shadowColor = glowC || `rgba(100,220,150,${0.4 * globalA * dimFactor})`;
+      }
+      p.fill(fillC[0], fillC[1], fillC[2], fillC[3]);
+      p.stroke(strokeC[0], strokeC[1], strokeC[2], strokeC[3]);
+      p.strokeWeight(n.type === 0 ? 1.5 : n.type === 1 ? 1.0 : 0.5);
+      p.ellipse(n.x, n.y, r * 2);
+
+      // Extra bright ring for selected node
+      if (ht > 0) {
+        p.drawingContext.shadowBlur  = 0;
+        p.stroke(160, 255, 200, 0.4 * ht * globalA);
+        p.strokeWeight((n.type === 0 ? 1.5 : 1.0) * p.lerp(1, 2.5, ht));
+        p.ellipse(n.x, n.y, r * 2);
+      }
+      p.pop();
+
+      drawLabel(n, t, globalA, r, dimFactor);
+    });
+  }
+
+  function drawLabel(n, t, globalA, r, dimFactor) {
+    const ht  = n.highlightT;
+    const pt2 = n.prevT;
+    const isHov = n === hovered;
+
+    let labelAlpha;
+    if (ht > 0) {
+      labelAlpha = p.lerp(0.55, 1.0, ht) * globalA;
+    } else if (pt2 > 0) {
+      labelAlpha = p.lerp(0.55, 1.0, pt2) * globalA;
+    } else if (isHov) {
+      labelAlpha = globalA;
+    } else {
+      labelAlpha = 0.55 * globalA * dimFactor;
+    }
+
+    const fontSize = n.type === 0 ? 13 : n.type === 1 ? 11 : 9;
+    const fontSizeHL = ht > 0 ? p.lerp(fontSize, fontSize + 3, ht) : fontSize;
+    const yOff = r + fontSizeHL + 2;
+
+    p.push();
+    p.noStroke();
+    if (ht > 0) {
+      // Glow behind label text for selected
+      p.drawingContext.shadowBlur  = 12 * ht;
+      p.drawingContext.shadowColor = `rgba(140,255,180,${0.6 * ht})`;
+    }
+    p.fill(140, 220, 170, labelAlpha);
+    p.textSize(fontSizeHL);
+    p.textAlign(p.CENTER, p.TOP);
+    p.text(n.name, n.x, n.y + yOff);
+    p.pop();
+  }
+
+  // ── Idle text ─────────────────────────────────────────────────────
+  function drawIdleText(t) {
+    const breath = 0.5 + 0.5 * Math.sin(t * 0.002);
+    p.push();
+    p.noStroke();
+    p.fill(120, 200, 150, p.lerp(0.3, 0.7, breath));
+    p.textSize(16);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.text('place your knob', p.width / 2, p.height / 2);
+    p.pop();
+  }
+
+  // ── Mouse interaction ─────────────────────────────────────────────
+  p.mousePressed = function() {
+    const t = p.millis();
+
+    // Find clicked node
+    let clicked = null;
+    nodes.forEach(n => {
+      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < getPulseRadius(n, t) + 12) {
+        clicked = n;
+      }
+    });
+
+    if (clicked) {
+      // Reveal map on first click
+      if (appState === 0) {
+        appState = 1;
+        revealStart = t;
+      }
+
+      if (clicked === highlightedNode) {
+        // Clicking the same node again deselects
+        setHighlight(null);
+      } else {
+        spawnRipple(clicked.x, clicked.y);
+        setHighlight(clicked);
+      }
+    } else {
+      // Click on empty space deselects
+      if (highlightedNode) setHighlight(null);
+    }
+  };
+
+  // ── Keyboard ──────────────────────────────────────────────────────
+  p.keyPressed = function() {
+    if (p.keyCode === p.ESCAPE) {
+      resetAll();
+    } else if (p.key === ' ') {
+      if (appState === 0) {
+        appState = 1;
+        revealStart = p.millis();
+      }
+    }
+  };
+
+  function resetAll() {
+    // Clear highlight
+    highlightedNode  = null;
+    prevHighlightNode = null;
+    dimT = 0;
+    dimDir = 0;
+    ripples = [];
+
+    // Go back to idle state
+    appState = 0;
+
+    // Restart background — fill canvas solid to clear all trails
+    p.push();
+    p.noStroke();
+    p.fill(6, 13, 10, 1);
+    p.rect(0, 0, p.width, p.height);
+    p.pop();
+
+    // Respawn particles at new random positions for fresh drift
+    particles.forEach(pt => {
+      pt.x = p.random(p.width);
+      pt.y = p.random(p.height);
+      pt.noiseX = p.random(0, 1000);
+      pt.noiseY = p.random(500, 1500);
+    });
+  }
+
+  function setHighlight(newNode) {
+    if (newNode === highlightedNode) return;
+
+    if (highlightedNode) {
+      prevHighlightNode = highlightedNode;
+      prevHighlightStart = p.millis();
+    }
+    highlightedNode = newNode;
+    highlightStart  = p.millis();
+
+    if (newNode === null) {
+      prevHighlightNode = null;
+      // Fade dim out
+      dimDir = -1;
+      dimStart = p.millis();
+    } else {
+      // Fade dim in
+      dimDir = 1;
+      dimStart = p.millis();
+    }
+  }
+
+  // ── Utility ───────────────────────────────────────────────────────
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genre Map v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #ffffff; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+new p5(function(p) {
+
+  // ── Node definitions ──────────────────────────────────────────────
+  const NODE_DATA = [
+    { name: 'Jazz',             rx: 0.25, ry: 0.22, type: 0 },
+    { name: 'Funk',             rx: 0.46, ry: 0.66, type: 0 },
+    { name: 'Hip-Hop',          rx: 0.76, ry: 0.21, type: 0 },
+    { name: 'Soul',             rx: 0.36, ry: 0.30, type: 1 },
+    { name: 'R&B',              rx: 0.59, ry: 0.46, type: 1 },
+    { name: 'Neo Soul',         rx: 0.56, ry: 0.33, type: 1 },
+    { name: 'Lo-Fi HH',         rx: 0.63, ry: 0.11, type: 1 },
+    { name: 'Acid Jazz',        rx: 0.33, ry: 0.43, type: 1 },
+    { name: 'G-Funk',           rx: 0.56, ry: 0.76, type: 1 },
+    { name: 'Blues',            rx: 0.08, ry: 0.32, type: 2 },
+    { name: 'Swing',            rx: 0.11, ry: 0.14, type: 2 },
+    { name: 'Bossa Nova',       rx: 0.18, ry: 0.07, type: 2 },
+    { name: 'Nu Jazz',          rx: 0.20, ry: 0.38, type: 2 },
+    { name: 'Gospel',           rx: 0.28, ry: 0.56, type: 2 },
+    { name: 'Disco',            rx: 0.38, ry: 0.80, type: 2 },
+    { name: 'Quiet Storm',      rx: 0.46, ry: 0.22, type: 2 },
+    { name: 'Contemporary R&B', rx: 0.69, ry: 0.36, type: 2 },
+    { name: 'Jazz-Rap',         rx: 0.53, ry: 0.14, type: 2 },
+    { name: 'Boom Bap',         rx: 0.83, ry: 0.31, type: 2 },
+    { name: 'Trap',             rx: 0.89, ry: 0.18, type: 2 },
+    { name: 'Grime',            rx: 0.91, ry: 0.07, type: 2 },
+  ];
+
+  function idx(name) { return NODE_DATA.findIndex(n => n.name === name); }
+
+  // ── Edge definitions ──────────────────────────────────────────────
+  const EDGE_DEFS = [
+    ['Jazz',    'Blues',            'bridge-sat'],
+    ['Jazz',    'Swing',            'bridge-sat'],
+    ['Jazz',    'Bossa Nova',       'bridge-sat'],
+    ['Jazz',    'Nu Jazz',          'bridge-sat'],
+    ['Jazz',    'Soul',             'main-bridge'],
+    ['Jazz',    'Acid Jazz',        'main-bridge'],
+    ['Jazz',    'Jazz-Rap',         'bridge-sat'],
+    ['Jazz',    'Lo-Fi HH',         'main-bridge'],
+    ['Soul',    'Gospel',           'bridge-sat'],
+    ['Soul',    'Quiet Storm',      'bridge-sat'],
+    ['Soul',    'R&B',              'bridge-bridge'],
+    ['Soul',    'Neo Soul',         'bridge-bridge'],
+    ['Soul',    'Funk',             'main-bridge'],
+    ['Funk',    'Gospel',           'bridge-sat'],
+    ['Funk',    'Disco',            'bridge-sat'],
+    ['Funk',    'G-Funk',           'main-bridge'],
+    ['Funk',    'Acid Jazz',        'main-bridge'],
+    ['Funk',    'R&B',              'main-bridge'],
+    ['R&B',     'Contemporary R&B', 'bridge-sat'],
+    ['R&B',     'Quiet Storm',      'bridge-sat'],
+    ['R&B',     'Neo Soul',         'bridge-bridge'],
+    ['R&B',     'Hip-Hop',          'main-bridge'],
+    ['Neo Soul','Contemporary R&B', 'bridge-sat'],
+    ['Hip-Hop', 'Boom Bap',         'bridge-sat'],
+    ['Hip-Hop', 'Trap',             'bridge-sat'],
+    ['Hip-Hop', 'Grime',            'bridge-sat'],
+    ['Hip-Hop', 'G-Funk',           'main-bridge'],
+    ['Hip-Hop', 'Jazz-Rap',         'main-bridge'],
+    ['Hip-Hop', 'Lo-Fi HH',         'main-bridge'],
+    ['Lo-Fi HH','Jazz-Rap',         'sat-sat'],
+    ['G-Funk',  'Boom Bap',         'sat-sat'],
+  ];
+
+  // Node gradient config
+  // outerR: outer diffusion radius, maxAlpha: peak alpha of gradient rings
+  // coreR:  solid center dot radius, coreColor: [r,g,b]
+  // hlOuterR: highlighted outer radius, hlMaxAlpha, hlCoreColor
+  const NODE_CFG = {
+    0: {
+      // Resting: very soft, barely-there navy wash
+      outerR: 80,  step: 2,   maxAlpha: 0.07, baseColor: [20, 45, 110],
+      coreR: 12, coreColor: [40, 75, 170],
+      // Selected: deeper indigo-slate, not electric — dignified
+      hlOuterR: 115, hlMaxAlpha: 0.28, hlBaseColor: [45, 70, 160], hlCoreColor: [90, 130, 220], hlCoreR: 15,
+    },
+    1: {
+      outerR: 45,  step: 2,   maxAlpha: 0.05, baseColor: [20, 45, 110],
+      coreR: 8,  coreColor: [35, 68, 160],
+      hlOuterR: 65,  hlMaxAlpha: 0.24, hlBaseColor: [40, 65, 150], hlCoreColor: [80, 120, 210], hlCoreR: 10,
+    },
+    2: {
+      outerR: 22,  step: 1.5, maxAlpha: 0.04, baseColor: [20, 45, 110],
+      coreR: 4,  coreColor: [28, 58, 150],
+      hlOuterR: 32,  hlMaxAlpha: 0.22, hlBaseColor: [38, 62, 145], hlCoreColor: [75, 115, 205], hlCoreR: 5.2,
+    },
+  };
+
+  // ── State ─────────────────────────────────────────────────────────
+  let nodes = [];
+  let edges = [];
+  let particles = [];
+  let ripples = [];
+
+  let appState = 0;
+  let revealStart = -1;
+  const revealDuration = 2000;
+
+  let highlightedNode   = null;
+  let prevHighlightNode = null;
+  let highlightStart    = 0;
+  let prevHighlightStart = 0;
+  const highlightFadeDur = 800;
+
+  let dimStart = 0;
+  let dimT = 0;
+  let dimDir = 0;
+  const dimDur = 600;
+
+  let hovered = null;
+
+  // ── Setup ─────────────────────────────────────────────────────────
+  p.setup = function() {
+    p.createCanvas(p.windowWidth, p.windowHeight);
+    p.textFont('Syne');
+    p.colorMode(p.RGB, 255, 255, 255, 1);
+    buildScene();
+  };
+
+  function buildScene() {
+    nodes = NODE_DATA.map((d, i) => ({
+      ...d,
+      id: i,
+      x: d.rx * p.width,
+      y: d.ry * p.height,
+      noiseOff: p.random(0, 1000),
+      highlightT: 0,
+      prevT: 0,
+    }));
+
+    // Build edges — store random seed params so geometry can be recomputed on resize
+    edges = EDGE_DEFS.map(([na, nb, ctype]) => {
+      const ai = idx(na), bi = idx(nb);
+      const numBranches = Math.floor(p.random(1, 3)); // 1 or 2 branches per edge
+      const branchSeeds = Array.from({ length: numBranches }, () => ({
+        t:              p.random(0.22, 0.78),          // position along main curve
+        side:           p.random() > 0.5 ? 1 : -1,    // which side to branch
+        angleOff:       p.random(0.45, 1.05),          // how far to deviate from tangent
+        cpAngleOff:     p.random(-0.2, 0.2),           // control-point wobble
+        lenFactor:      p.random(0.07, 0.17),          // branch length as fraction of edge
+      }));
+      const e = { ai, bi, ctype, noiseOff: p.random(0, 1000), branchSeeds, branches: [] };
+      return e;
+    });
+    edges.forEach(e => computeEdgeGeometry(e));
+
+    // Background particles — medium blue-grey, visible on white
+    particles = [];
+    for (let i = 0; i < 80; i++) {
+      particles.push({
+        x: p.random(p.width),
+        y: p.random(p.height),
+        r: p.random(1.5, 3.5),
+        noiseX: p.random(0, 1000),
+        noiseY: p.random(500, 1500),
+        speed: p.random(0.2, 0.5),
+        alpha: p.random(0.10, 0.22),
+      });
+    }
+  }
+
+  // ── Bezier helpers ────────────────────────────────────────────────
+  function cbPt(p0, p1, p2, p3, t) {
+    const u = 1 - t;
+    return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+  }
+  function cbTan(p0, p1, p2, p3, t) {
+    const u = 1 - t;
+    return 3*(u*u*(p1-p0) + 2*u*t*(p2-p1) + t*t*(p3-p2));
+  }
+
+  function computeEdgeGeometry(e) {
+    const na = nodes[e.ai], nb = nodes[e.bi];
+    const ax = na.x, ay = na.y, bx = nb.x, by = nb.y;
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    // Asymmetric S-bend: two control points offset in the same perpendicular direction
+    // but with slightly different magnitudes, giving a gentle organic curve
+    const bend = len * 0.13;
+    const sign = ((e.ai + e.bi) % 2 === 0) ? 1 : -1;
+    e.cp1x = ax + dx * 0.28 + nx * bend * sign;
+    e.cp1y = ay + dy * 0.28 + ny * bend * sign;
+    e.cp2x = ax + dx * 0.72 + nx * bend * sign * 0.55;
+    e.cp2y = ay + dy * 0.72 + ny * bend * sign * 0.55;
+
+    // Recompute branch positions from the now-known control points
+    e.branches = e.branchSeeds.map(s => {
+      const t = s.t;
+      const px = cbPt(ax, e.cp1x, e.cp2x, bx, t);
+      const py = cbPt(ay, e.cp1y, e.cp2y, by, t);
+      const tx = cbTan(ax, e.cp1x, e.cp2x, bx, t);
+      const ty = cbTan(ay, e.cp1y, e.cp2y, by, t);
+      const baseAngle = Math.atan2(ty, tx);
+      const branchAngle = baseAngle + s.side * s.angleOff;
+      const bl = len * s.lenFactor;
+      const cpAngle = branchAngle + s.cpAngleOff;
+      return {
+        x0: px, y0: py,
+        cpx: px + Math.cos(cpAngle) * bl * 0.55,
+        cpy: py + Math.sin(cpAngle) * bl * 0.55,
+        x1: px + Math.cos(branchAngle) * bl,
+        y1: py + Math.sin(branchAngle) * bl,
+      };
+    });
+  }
+
+  p.windowResized = function() {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
+    nodes.forEach(n => { n.x = n.rx * p.width; n.y = n.ry * p.height; });
+    edges.forEach(e => computeEdgeGeometry(e));
+  };
+
+  // ── Draw ──────────────────────────────────────────────────────────
+  p.draw = function() {
+    p.background(255);
+
+    const t = p.millis();
+
+    // Reveal alpha
+    let globalAlpha;
+    if (appState === 0) {
+      globalAlpha = 0;
+    } else if (appState === 1) {
+      const prog = (t - revealStart) / revealDuration;
+      globalAlpha = easeOut(p.constrain(prog, 0, 1));
+      if (prog >= 1) appState = 2;
+    } else {
+      globalAlpha = 1;
+    }
+
+    const baseMapAlpha  = appState === 0 ? 0.3  : globalAlpha;
+    // Idle state: edges still faintly visible (ghostly), not completely hidden
+    const baseEdgeAlpha = appState === 0 ? 0.12 : globalAlpha;
+
+    // Highlight transitions
+    nodes.forEach(n => {
+      n.highlightT = (highlightedNode === n)
+        ? p.constrain((t - highlightStart) / highlightFadeDur, 0, 1) : 0;
+      n.prevT = (prevHighlightNode === n)
+        ? 1 - p.constrain((t - prevHighlightStart) / highlightFadeDur, 0, 1) : 0;
+    });
+
+    // Dim transition
+    if (dimDir !== 0) {
+      const dp = (t - dimStart) / dimDur;
+      dimT = dimDir === 1 ? easeOut(p.constrain(dp, 0, 1))
+                          : 1 - easeOut(p.constrain(dp, 0, 1));
+      if (dp >= 1) dimDir = 0;
+    }
+
+    // Hover detection
+    hovered = null;
+    p.cursor(p.ARROW);
+    nodes.forEach(n => {
+      const cfg = NODE_CFG[n.type];
+      const pulseR = getPulseOuterR(n, t);
+      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < pulseR * 0.35 + 10) {
+        hovered = n;
+        p.cursor(p.HAND);
+      }
+    });
+
+    // Draw background particles
+    drawParticles(t);
+
+    // Draw gradient nodes (halos behind edges)
+    drawGradientNodes(t, baseMapAlpha);
+
+    // Draw edges
+    drawEdges(t, baseEdgeAlpha);
+
+    // Draw core dots on top
+    drawCoreDots(t, baseMapAlpha);
+
+    // Draw labels
+    nodes.forEach(n => {
+      const cfg = NODE_CFG[n.type];
+      const active = Math.max(n.highlightT, n.prevT);
+      const outerR = p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
+      const dimFactor = getDimFactor(n);
+      drawLabel(n, outerR, baseMapAlpha, dimFactor);
+    });
+
+    drawRipples(t);
+
+    if (appState === 0) drawIdleText(t);
+  };
+
+  // ── Pulse helpers ─────────────────────────────────────────────────
+  function getPulseFactor(n, t) {
+    return 1 + 0.08 * (p.noise(t * 0.0005 + n.noiseOff) * 2 - 1);
+  }
+
+  function getPulseOuterR(n, t) {
+    const cfg = NODE_CFG[n.type];
+    const active = Math.max(n.highlightT, n.prevT);
+    return p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
+  }
+
+  function getDimFactor(n) {
+    if (!highlightedNode || dimT === 0) return 1;
+    if (nodeIsConnected(n)) return 1;
+    return p.lerp(1, 0.12, dimT);
+  }
+
+  // ── Gradient node rings ───────────────────────────────────────────
+  function drawGradientNodes(t, globalA) {
+    nodes.forEach(n => {
+      const cfg = NODE_CFG[n.type];
+      const active = Math.max(n.highlightT, n.prevT);
+      const pf = getPulseFactor(n, t);
+
+      const outerR   = p.lerp(cfg.outerR,   cfg.hlOuterR,   active) * pf;
+      const maxAlpha = p.lerp(cfg.maxAlpha,  cfg.hlMaxAlpha, active);
+      // Lerp gradient ring color from dark navy → vivid electric blue when highlighted
+      const hlBase = cfg.hlBaseColor || cfg.baseColor;
+      const cr = p.lerp(cfg.baseColor[0], hlBase[0], active);
+      const cg = p.lerp(cfg.baseColor[1], hlBase[1], active);
+      const cb = p.lerp(cfg.baseColor[2], hlBase[2], active);
+      const dimF = getDimFactor(n);
+      const baseA = globalA * dimF;
+
+      p.push();
+      p.noStroke();
+      // Draw from outer radius inward — each ring alpha increases toward center
+      for (let r = outerR; r > 0; r -= cfg.step) {
+        const t01 = 1 - r / outerR;              // 0 at edge, 1 at center
+        const a = p.map(t01, 0, 1, 0, maxAlpha) * baseA;
+        p.fill(cr, cg, cb, a);
+        p.ellipse(n.x, n.y, r * 2);
+      }
+      p.pop();
+    });
+  }
+
+  // ── Core dots ─────────────────────────────────────────────────────
+  function drawCoreDots(t, globalA) {
+    nodes.forEach(n => {
+      const cfg = NODE_CFG[n.type];
+      const active = Math.max(n.highlightT, n.prevT);
+      const pf = getPulseFactor(n, t);
+      const dimF = getDimFactor(n);
+
+      const coreR = p.lerp(cfg.coreR, cfg.hlCoreR, active) * pf;
+      const [cr, cg, cb] = active > 0 ? cfg.hlCoreColor : cfg.coreColor;
+
+      p.push();
+      p.noStroke();
+      p.fill(cr, cg, cb, globalA * dimF);
+      p.ellipse(n.x, n.y, coreR * 2);
+      p.pop();
+    });
+  }
+
+  // ── Particles ─────────────────────────────────────────────────────
+  function drawParticles(t) {
+    const ns = t * 0.0003;
+    particles.forEach(pt => {
+      const vx = (p.noise(pt.noiseX + ns) - 0.5) * 2 * pt.speed;
+      const vy = (p.noise(pt.noiseY + ns) - 0.5) * 2 * pt.speed;
+      pt.x = (pt.x + vx + p.width)  % p.width;
+      pt.y = (pt.y + vy + p.height) % p.height;
+      p.push();
+      p.noStroke();
+      // Blue-grey dots on white background, individually randomised alpha
+      p.fill(80, 110, 190, pt.alpha);
+      p.ellipse(pt.x, pt.y, pt.r * 2);
+      p.pop();
+    });
+  }
+
+  // ── Edges ─────────────────────────────────────────────────────────
+  function edgeIsConnected(e) {
+    if (!highlightedNode) return false;
+    return e.ai === highlightedNode.id || e.bi === highlightedNode.id;
+  }
+
+  function nodeIsConnected(n) {
+    if (!highlightedNode) return false;
+    if (n === highlightedNode) return true;
+    return edges.some(e =>
+      (e.ai === highlightedNode.id && e.bi === n.id) ||
+      (e.bi === highlightedNode.id && e.ai === n.id)
+    );
+  }
+
+  function drawEdges(t, globalA) {
+    const ns = t * 0.00015;
+    edges.forEach(e => {
+      const na = nodes[e.ai], nb = nodes[e.bi];
+      const connected = edgeIsConnected(e);
+
+      // Per-edge slow breathing ±25%
+      const pulse = 1 + 0.25 * Math.sin(p.noise(e.noiseOff + ns) * p.TWO_PI);
+
+      let er = 80, eg = 100, eb = 160;
+      let alpha = 0.20 * globalA * pulse;
+      let sw = 0.6;
+
+      if (highlightedNode) {
+        if (connected) {
+          const ht = highlightedNode.highlightT;
+          er = 55; eg = 85; eb = 190;
+          alpha = p.lerp(0.20 * globalA * pulse, 0.52 * globalA, ht);
+          sw    = p.lerp(0.6, 1.1, ht);
+        } else {
+          alpha *= p.lerp(1, 0.12, dimT);
+        }
+      }
+      if (prevHighlightNode) {
+        const wasConn = e.ai === prevHighlightNode.id || e.bi === prevHighlightNode.id;
+        if (wasConn) {
+          const pt2 = prevHighlightNode.prevT;
+          alpha = p.lerp(alpha, 0.52 * globalA, pt2);
+          sw    = p.lerp(sw, 1.1, pt2);
+        }
+      }
+
+      p.push();
+      p.noFill();
+
+      // ── Main organic curve ────────────────────────────────────────
+      p.stroke(er, eg, eb, alpha);
+      p.strokeWeight(sw);
+      p.bezier(na.x, na.y, e.cp1x, e.cp1y, e.cp2x, e.cp2y, nb.x, nb.y);
+
+      // ── Decorative branches ───────────────────────────────────────
+      // Branches are thinner and more transparent than the main line
+      const branchAlpha  = alpha * 0.55;
+      const branchWeight = sw * 0.45;
+      p.strokeWeight(branchWeight);
+      p.stroke(er, eg, eb, branchAlpha);
+      e.branches.forEach(b => {
+        // Quadratic-ish bezier: use the same control point twice as a cubic
+        p.bezier(b.x0, b.y0, b.cpx, b.cpy, b.cpx, b.cpy, b.x1, b.y1);
+      });
+
+      p.pop();
+    });
+  }
+
+  // ── Labels ────────────────────────────────────────────────────────
+  function drawLabel(n, outerR, globalA, dimFactor) {
+    const active = Math.max(n.highlightT, n.prevT);
+    const isHov  = n === hovered;
+
+    // Main node labels darker/larger; bridge+sat lighter
+    let baseTextA, hlTextA;
+    if (n.type === 0) {
+      baseTextA = 0.85; hlTextA = 1.0;
+    } else {
+      baseTextA = 0.6;  hlTextA = 0.9;
+    }
+
+    let labelAlpha;
+    if (active > 0) {
+      labelAlpha = p.lerp(baseTextA, hlTextA, active) * globalA;
+    } else if (isHov) {
+      labelAlpha = hlTextA * globalA;
+    } else {
+      labelAlpha = baseTextA * globalA * dimFactor;
+    }
+
+    const fontSize = n.type === 0 ? 13 : n.type === 1 ? 11 : 9;
+    const fs = active > 0 ? p.lerp(fontSize, fontSize + 3, active) : fontSize;
+    // Place label just below the outer diffusion halo edge
+    const yOff = outerR * 0.5 + fs + 4;
+
+    // Color: main node rgba(20,40,100), others rgba(40,60,120)
+    const [lr, lg, lb] = n.type === 0 ? [20, 40, 100] : [40, 60, 120];
+
+    p.push();
+    p.noStroke();
+    p.fill(lr, lg, lb, labelAlpha);
+    p.textSize(fs);
+    p.textAlign(p.CENTER, p.TOP);
+    p.text(n.name, n.x, n.y + yOff);
+    p.pop();
+  }
+
+  // ── Ripples ───────────────────────────────────────────────────────
+  function spawnRipple(x, y) {
+    ripples.push({ x, y, born: p.millis(), dur: 1000 });
+  }
+
+  function drawRipples(t) {
+    ripples = ripples.filter(r => t - r.born < r.dur);
+    ripples.forEach(r => {
+      const prog = (t - r.born) / r.dur;
+      const ease = easeOut(prog);
+      p.push();
+      p.noFill();
+      p.stroke(60, 100, 220, (1 - prog) * 0.35);
+      p.strokeWeight(1.2 * (1 - prog));
+      p.ellipse(r.x, r.y, ease * 80 * 2);
+      p.stroke(40, 80, 200, (1 - prog) * 0.18);
+      p.strokeWeight(0.8);
+      p.ellipse(r.x, r.y, ease * 120 * 2);
+      p.pop();
+    });
+  }
+
+  // ── Idle text ─────────────────────────────────────────────────────
+  function drawIdleText(t) {
+    const breath = 0.5 + 0.5 * Math.sin(t * 0.002);
+    p.push();
+    p.noStroke();
+    p.fill(40, 70, 160, p.lerp(0.25, 0.55, breath));
+    p.textSize(16);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.text('place your knob', p.width / 2, p.height / 2);
+    p.pop();
+  }
+
+  // ── Mouse ─────────────────────────────────────────────────────────
+  p.mousePressed = function() {
+    const t = p.millis();
+    let clicked = null;
+    nodes.forEach(n => {
+      const cfg = NODE_CFG[n.type];
+      // Clickable area is the core region (inner 35% of outer radius)
+      const clickR = getPulseOuterR(n, t) * 0.35 + 10;
+      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < clickR)
+        clicked = n;
+    });
+
+    if (clicked) {
+      if (appState === 0) { appState = 1; revealStart = t; }
+      if (clicked === highlightedNode) {
+        setHighlight(null);
+      } else {
+        spawnRipple(clicked.x, clicked.y);
+        setHighlight(clicked);
+      }
+    } else {
+      if (highlightedNode) setHighlight(null);
+    }
+  };
+
+  // ── Keyboard ──────────────────────────────────────────────────────
+  p.keyPressed = function() {
+    if (p.keyCode === p.ESCAPE) {
+      resetAll();
+    } else if (p.key === ' ') {
+      if (appState === 0) { appState = 1; revealStart = p.millis(); }
+    }
+  };
+
+  function resetAll() {
+    highlightedNode   = null;
+    prevHighlightNode = null;
+    dimT = 0; dimDir = 0;
+    ripples = [];
+    appState = 0;
+    p.background(255);
+    particles.forEach(pt => {
+      pt.x = p.random(p.width);
+      pt.y = p.random(p.height);
+      pt.noiseX = p.random(0, 1000);
+      pt.noiseY = p.random(500, 1500);
+    });
+  }
+
+  function setHighlight(newNode) {
+    if (newNode === highlightedNode) return;
+    if (highlightedNode) {
+      prevHighlightNode  = highlightedNode;
+      prevHighlightStart = p.millis();
+    }
+    highlightedNode = newNode;
+    highlightStart  = p.millis();
+    if (newNode === null) {
+      prevHighlightNode = null;
+      dimDir = -1; dimStart = p.millis();
+    } else {
+      dimDir = 1; dimStart = p.millis();
+    }
+  }
+
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+});
+</script>
+</body>
+</html>
