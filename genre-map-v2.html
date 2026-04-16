@@ -364,6 +364,18 @@ new p5(function(p) {
       });
       drawRipples(t);
       if (appState === 0) drawIdleText(t);
+
+      // Rotating needle — sweeps with the disc so rotation is obvious
+      p.push();
+      p.stroke(80, 110, 190, 0.55);
+      p.strokeWeight(1.5);
+      p.strokeCap(p.ROUND);
+      p.line(cx, cy, cx, cy - tR * 0.88);
+      p.noStroke();
+      p.fill(80, 110, 190, 0.75);
+      p.ellipse(cx, cy - tR * 0.88, 7, 7);
+      p.pop();
+
       p.pop();
 
       p.drawingContext.restore();
