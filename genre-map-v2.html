@@ -125,6 +125,21 @@ new p5(function(p) {
 
   let hovered = null;
 
+  // ── Table geometry constants ──────────────────────────────────────
+  // Bounding-box centre and max-radius of the node layout (normalised coords)
+  const DATA_CX    = 0.495;
+  const DATA_CY    = 0.435;
+  const DATA_MAX_R = 0.565; // sqrt( max((rx-DATA_CX)² + (ry-DATA_CY)²) ) + margin
+
+  function getTableR() {
+    return Math.min(p.width, p.height) * 0.435;
+  }
+  function nodePos(rx, ry) {
+    const cx = p.width / 2, cy = p.height / 2;
+    const scale = getTableR() * 0.84 / DATA_MAX_R;
+    return { x: cx + (rx - DATA_CX) * scale, y: cy + (ry - DATA_CY) * scale };
+  }
+
   // ── Turntable state ───────────────────────────────────────────────
   let tableAngle = 0;
   let tableVelocity = 0;       // radians per frame (ref: 60 fps)
@@ -143,15 +158,18 @@ new p5(function(p) {
   };
 
   function buildScene() {
-    nodes = NODE_DATA.map((d, i) => ({
-      ...d,
-      id: i,
-      x: d.rx * p.width,
-      y: d.ry * p.height,
-      noiseOff: p.random(0, 1000),
-      highlightT: 0,
-      prevT: 0,
-    }));
+    nodes = NODE_DATA.map((d, i) => {
+      const pos = nodePos(d.rx, d.ry);
+      return {
+        ...d,
+        id: i,
+        x: pos.x,
+        y: pos.y,
+        noiseOff: p.random(0, 1000),
+        highlightT: 0,
+        prevT: 0,
+      };
+    });
 
     // Build edges — store random seed params so geometry can be recomputed on resize
     edges = EDGE_DEFS.map(([na, nb, ctype]) => {
@@ -232,7 +250,7 @@ new p5(function(p) {
 
   p.windowResized = function() {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-    nodes.forEach(n => { n.x = n.rx * p.width; n.y = n.ry * p.height; });
+    nodes.forEach(n => { const pos = nodePos(n.rx, n.ry); n.x = pos.x; n.y = pos.y; });
     edges.forEach(e => computeEdgeGeometry(e));
   };
 
@@ -274,7 +292,10 @@ new p5(function(p) {
       if (dp >= 1) dimDir = 0;
     }
 
-    // Hover detection — use inverse-rotated mouse coords
+    const cx = p.width / 2, cy = p.height / 2;
+    const tR = getTableR();
+
+    // Hover detection — inverse-rotate mouse into map space
     const { rmx, rmy } = rotatedMouse();
     hovered = null;
     p.cursor(ttDragging ? 'grabbing' : p.ARROW);
@@ -286,40 +307,72 @@ new p5(function(p) {
       }
     });
 
-    // ── Rotate the whole map around the canvas center ──────────────
+    // ── Clip everything to the circular table ─────────────────────
+    p.drawingContext.save();
+    p.drawingContext.beginPath();
+    p.drawingContext.arc(cx, cy, tR, 0, Math.PI * 2);
+    p.drawingContext.clip();
+
+    // Table surface fill (white)
     p.push();
-    p.translate(p.width / 2, p.height / 2);
+    p.noStroke();
+    p.fill(255);
+    p.ellipse(cx, cy, tR * 2);
+    p.pop();
+
+    // ── Rotating map content ──────────────────────────────────────
+    p.push();
+    p.translate(cx, cy);
     p.rotate(tableAngle);
-    p.translate(-p.width / 2, -p.height / 2);
+    p.translate(-cx, -cy);
 
-    // Draw background particles
     drawParticles(t);
-
-    // Draw gradient nodes (halos behind edges)
     drawGradientNodes(t, baseMapAlpha);
-
-    // Draw edges
     drawEdges(t, baseEdgeAlpha);
-
-    // Draw core dots on top
     drawCoreDots(t, baseMapAlpha);
-
-    // Draw labels
     nodes.forEach(n => {
       const cfg = NODE_CFG[n.type];
       const active = Math.max(n.highlightT, n.prevT);
       const outerR = p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
-      const dimFactor = getDimFactor(n);
-      drawLabel(n, outerR, baseMapAlpha, dimFactor);
+      drawLabel(n, outerR, baseMapAlpha, getDimFactor(n));
     });
-
     drawRipples(t);
-
     if (appState === 0) drawIdleText(t);
 
-    p.pop(); // ── end map rotation ───────────────────────────────────
+    p.pop(); // end rotating content
 
-    // Spin HUD — drawn in screen space (outside rotation)
+    // Restore clip
+    p.drawingContext.restore();
+
+    // ── Fixed table frame (outside clip) ─────────────────────────
+    // Outer ring / rim
+    p.push();
+    p.noFill();
+    p.stroke(80, 110, 190, 0.18);
+    p.strokeWeight(10);
+    p.ellipse(cx, cy, tR * 2);
+    p.strokeWeight(1);
+    p.stroke(80, 110, 190, 0.32);
+    p.ellipse(cx, cy, tR * 2);
+    p.pop();
+
+    // Fixed needle at top
+    p.push();
+    p.fill(40, 60, 120, 0.75);
+    p.noStroke();
+    p.triangle(cx - 5, cy - tR - 14, cx + 5, cy - tR - 14, cx, cy - tR - 2);
+    p.pop();
+
+    // Center spindle
+    p.push();
+    p.noStroke();
+    p.fill(80, 100, 160, 0.9);
+    p.ellipse(cx, cy, 9);
+    p.fill(220, 225, 240, 1);
+    p.ellipse(cx, cy, 4);
+    p.pop();
+
+    // Spin HUD
     drawSpinHUD(t);
 
     // Inertia decay
