@@ -646,7 +646,8 @@ new p5(function(p) {
     }
     if (alpha <= 0) return;
 
-    const rate = (absVel / 0.05).toFixed(2);     // 0.05 rad/frame ≈ 1.00×
+    const rawRate = absVel / 0.05;               // 0.05 rad/frame ≈ 1.00×
+    const snapped = rawRate < 0.75 ? 0.5 : rawRate < 1.25 ? 1.0 : 1.5;
     const dir  = tableVelocity > 0.002  ? 'FWD'
                : tableVelocity < -0.002 ? 'REV'
                : 'HOLD';
@@ -656,7 +657,7 @@ new p5(function(p) {
     p.fill(40, 70, 160, alpha * 0.55);
     p.textSize(10);
     p.textAlign(p.CENTER, p.BOTTOM);
-    p.text(`${dir}  ${rate}×`, p.width / 2, p.height - 24);
+    p.text(`${dir}  ${snapped.toFixed(1)}×`, p.width / 2, p.height - 24);
     p.pop();
   }
 
