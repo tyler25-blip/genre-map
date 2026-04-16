@@ -125,6 +125,15 @@ new p5(function(p) {
 
   let hovered = null;
 
+  // ── Turntable state ───────────────────────────────────────────────
+  let tableAngle = 0;
+  let tableVelocity = 0;       // radians per frame (ref: 60 fps)
+  let ttDragging = false;
+  let ttLastMouseAngle = 0;
+  let ttLastTime = 0;
+  let ttHasMoved = false;
+  let ttDownX = 0, ttDownY = 0;
+
   // ── Setup ─────────────────────────────────────────────────────────
   p.setup = function() {
     p.createCanvas(p.windowWidth, p.windowHeight);
@@ -265,17 +274,23 @@ new p5(function(p) {
       if (dp >= 1) dimDir = 0;
     }
 
-    // Hover detection
+    // Hover detection — use inverse-rotated mouse coords
+    const { rmx, rmy } = rotatedMouse();
     hovered = null;
-    p.cursor(p.ARROW);
+    p.cursor(ttDragging ? 'grabbing' : p.ARROW);
     nodes.forEach(n => {
-      const cfg = NODE_CFG[n.type];
       const pulseR = getPulseOuterR(n, t);
-      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < pulseR * 0.35 + 10) {
+      if (p.dist(rmx, rmy, n.x, n.y) < pulseR * 0.35 + 10) {
         hovered = n;
-        p.cursor(p.HAND);
+        if (!ttDragging) p.cursor(p.HAND);
       }
     });
+
+    // ── Rotate the whole map around the canvas center ──────────────
+    p.push();
+    p.translate(p.width / 2, p.height / 2);
+    p.rotate(tableAngle);
+    p.translate(-p.width / 2, -p.height / 2);
 
     // Draw background particles
     drawParticles(t);
@@ -301,6 +316,18 @@ new p5(function(p) {
     drawRipples(t);
 
     if (appState === 0) drawIdleText(t);
+
+    p.pop(); // ── end map rotation ───────────────────────────────────
+
+    // Spin HUD — drawn in screen space (outside rotation)
+    drawSpinHUD(t);
+
+    // Inertia decay
+    if (!ttDragging) {
+      tableAngle += tableVelocity;
+      tableVelocity *= 0.975;
+      if (Math.abs(tableVelocity) < 0.00008) tableVelocity = 0;
+    }
   };
 
   // ── Pulse helpers ─────────────────────────────────────────────────
@@ -522,36 +549,74 @@ new p5(function(p) {
     const breath = 0.5 + 0.5 * Math.sin(t * 0.002);
     p.push();
     p.noStroke();
-    p.fill(40, 70, 160, p.lerp(0.25, 0.55, breath));
-    p.textSize(16);
+    p.fill(40, 70, 160, p.lerp(0.18, 0.45, breath));
+    p.textSize(14);
     p.textAlign(p.CENTER, p.CENTER);
-    p.text('place your knob', p.width / 2, p.height / 2);
+    p.text('drag to spin  ·  click a genre', p.width / 2, p.height / 2);
+    p.pop();
+  }
+
+  // ── Spin HUD (drawn outside map rotation, bottom-center) ─────────
+  let hudFadeStart = 0;
+  let hudWasSpinning = false;
+  function drawSpinHUD(t) {
+    const absVel = Math.abs(tableVelocity);
+    const isSpinning = absVel > 0.002 || ttDragging;
+    if (isSpinning && !hudWasSpinning) { hudFadeStart = t; hudWasSpinning = true; }
+    if (!isSpinning) { hudWasSpinning = false; }
+
+    // Fade in when spinning, fade out 1s after stop
+    let alpha;
+    if (isSpinning) {
+      alpha = Math.min(1, (t - hudFadeStart) / 300);
+    } else {
+      const sinceStop = t - (hudFadeStart + 300);
+      alpha = Math.max(0, 1 - sinceStop / 1000);
+    }
+    if (alpha <= 0) return;
+
+    const rate = (absVel / 0.05).toFixed(2);     // 0.05 rad/frame ≈ 1.00×
+    const dir  = tableVelocity > 0.002  ? 'FWD'
+               : tableVelocity < -0.002 ? 'REV'
+               : 'HOLD';
+
+    p.push();
+    p.noStroke();
+    p.fill(40, 70, 160, alpha * 0.55);
+    p.textSize(10);
+    p.textAlign(p.CENTER, p.BOTTOM);
+    p.text(`${dir}  ${rate}×`, p.width / 2, p.height - 24);
     p.pop();
   }
 
   // ── Mouse ─────────────────────────────────────────────────────────
   p.mousePressed = function() {
-    const t = p.millis();
-    let clicked = null;
-    nodes.forEach(n => {
-      const cfg = NODE_CFG[n.type];
-      // Clickable area is the core region (inner 35% of outer radius)
-      const clickR = getPulseOuterR(n, t) * 0.35 + 10;
-      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < clickR)
-        clicked = n;
-    });
+    ttHasMoved = false;
+    ttDownX = p.mouseX;
+    ttDownY = p.mouseY;
+    ttLastMouseAngle = mouseAngleFromCenter();
+    ttLastTime = p.millis();
+    tableVelocity = 0;
+    ttDragging = true;
+  };
 
-    if (clicked) {
-      if (appState === 0) { appState = 1; revealStart = t; }
-      if (clicked === highlightedNode) {
-        setHighlight(null);
-      } else {
-        spawnRipple(clicked.x, clicked.y);
-        setHighlight(clicked);
-      }
-    } else {
-      if (highlightedNode) setHighlight(null);
-    }
+  p.mouseDragged = function() {
+    const now = p.millis();
+    const ma = mouseAngleFromCenter();
+    const delta = normAngleDelta(ma - ttLastMouseAngle);
+    tableAngle += delta;
+    const dt = Math.max(1, now - ttLastTime);
+    tableVelocity = delta * (16 / dt);
+    ttLastMouseAngle = ma;
+    ttLastTime = now;
+    ttHasMoved = true;
+  };
+
+  p.mouseReleased = function() {
+    ttDragging = false;
+    const dx = p.mouseX - ttDownX, dy = p.mouseY - ttDownY;
+    const moved = Math.sqrt(dx * dx + dy * dy);
+    if (!ttHasMoved || moved < 6) handleClick();
   };
 
   // ── Keyboard ──────────────────────────────────────────────────────
@@ -595,6 +660,45 @@ new p5(function(p) {
   }
 
   function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+  // ── Turntable helpers ─────────────────────────────────────────────
+  function mouseAngleFromCenter() {
+    return Math.atan2(p.mouseY - p.height / 2, p.mouseX - p.width / 2);
+  }
+  function normAngleDelta(d) {
+    while (d >  Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+  // Transform screen mouse coords into the rotated map's coordinate space
+  function rotatedMouse() {
+    const cx = p.width / 2, cy = p.height / 2;
+    const dx = p.mouseX - cx, dy = p.mouseY - cy;
+    const c = Math.cos(-tableAngle), s = Math.sin(-tableAngle);
+    return { rmx: cx + dx * c - dy * s, rmy: cy + dx * s + dy * c };
+  }
+
+  // ── Click handler (used by mouseReleased when no real drag) ───────
+  function handleClick() {
+    const t = p.millis();
+    const { rmx, rmy } = rotatedMouse();
+    let clicked = null;
+    nodes.forEach(n => {
+      const clickR = getPulseOuterR(n, t) * 0.35 + 10;
+      if (p.dist(rmx, rmy, n.x, n.y) < clickR) clicked = n;
+    });
+    if (clicked) {
+      if (appState === 0) { appState = 1; revealStart = t; }
+      if (clicked === highlightedNode) {
+        setHighlight(null);
+      } else {
+        spawnRipple(clicked.x, clicked.y);
+        setHighlight(clicked);
+      }
+    } else {
+      if (highlightedNode) setHighlight(null);
+    }
+  }
 
 });
 </script>
