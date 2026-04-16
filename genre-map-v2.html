@@ -16,6 +16,9 @@
 <script>
 new p5(function(p) {
 
+  // embed mode: flat full-canvas map, no rotation, no circular clip
+  const IS_EMBED = new URLSearchParams(window.location.search).has('embed');
+
   // ── Node definitions ──────────────────────────────────────────────
   const NODE_DATA = [
     { name: 'Jazz',             rx: 0.25, ry: 0.22, type: 0 },
@@ -159,7 +162,7 @@ new p5(function(p) {
 
   function buildScene() {
     nodes = NODE_DATA.map((d, i) => {
-      const pos = nodePos(d.rx, d.ry);
+      const pos = IS_EMBED ? { x: d.rx * p.width, y: d.ry * p.height } : nodePos(d.rx, d.ry);
       return {
         ...d,
         id: i,
@@ -250,7 +253,10 @@ new p5(function(p) {
 
   p.windowResized = function() {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-    nodes.forEach(n => { const pos = nodePos(n.rx, n.ry); n.x = pos.x; n.y = pos.y; });
+    nodes.forEach(n => {
+      const pos = IS_EMBED ? { x: n.rx * p.width, y: n.ry * p.height } : nodePos(n.rx, n.ry);
+      n.x = pos.x; n.y = pos.y;
+    });
     edges.forEach(e => computeEdgeGeometry(e));
   };
 
@@ -292,94 +298,106 @@ new p5(function(p) {
       if (dp >= 1) dimDir = 0;
     }
 
-    const cx = p.width / 2, cy = p.height / 2;
-    const tR = getTableR();
+    if (IS_EMBED) {
+      // ── Embed mode: flat full-canvas map, no rotation ───────────
+      hovered = null;
+      p.cursor(p.ARROW);
+      nodes.forEach(n => {
+        const pulseR = getPulseOuterR(n, t);
+        if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < pulseR * 0.35 + 10) {
+          hovered = n;
+          p.cursor(p.HAND);
+        }
+      });
+      drawParticles(t);
+      drawGradientNodes(t, baseMapAlpha);
+      drawEdges(t, baseEdgeAlpha);
+      drawCoreDots(t, baseMapAlpha);
+      nodes.forEach(n => {
+        const cfg = NODE_CFG[n.type];
+        const active = Math.max(n.highlightT, n.prevT);
+        const outerR = p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
+        drawLabel(n, outerR, baseMapAlpha, getDimFactor(n));
+      });
+      drawRipples(t);
+      if (appState === 0) drawIdleText(t);
 
-    // Hover detection — inverse-rotate mouse into map space
-    const { rmx, rmy } = rotatedMouse();
-    hovered = null;
-    p.cursor(ttDragging ? 'grabbing' : p.ARROW);
-    nodes.forEach(n => {
-      const pulseR = getPulseOuterR(n, t);
-      if (p.dist(rmx, rmy, n.x, n.y) < pulseR * 0.35 + 10) {
-        hovered = n;
-        if (!ttDragging) p.cursor(p.HAND);
+    } else {
+      // ── Standalone mode: circular table + turntable rotation ────
+      const cx = p.width / 2, cy = p.height / 2;
+      const tR = getTableR();
+
+      // Hover detection — inverse-rotate mouse into map space
+      const { rmx, rmy } = rotatedMouse();
+      hovered = null;
+      p.cursor(ttDragging ? 'grabbing' : p.ARROW);
+      nodes.forEach(n => {
+        const pulseR = getPulseOuterR(n, t);
+        if (p.dist(rmx, rmy, n.x, n.y) < pulseR * 0.35 + 10) {
+          hovered = n;
+          if (!ttDragging) p.cursor(p.HAND);
+        }
+      });
+
+      // Clip to circular table
+      p.drawingContext.save();
+      p.drawingContext.beginPath();
+      p.drawingContext.arc(cx, cy, tR, 0, Math.PI * 2);
+      p.drawingContext.clip();
+
+      p.push(); p.noStroke(); p.fill(255); p.ellipse(cx, cy, tR * 2); p.pop();
+
+      // Rotating map content
+      p.push();
+      p.translate(cx, cy);
+      p.rotate(tableAngle);
+      p.translate(-cx, -cy);
+      drawParticles(t);
+      drawGradientNodes(t, baseMapAlpha);
+      drawEdges(t, baseEdgeAlpha);
+      drawCoreDots(t, baseMapAlpha);
+      nodes.forEach(n => {
+        const cfg = NODE_CFG[n.type];
+        const active = Math.max(n.highlightT, n.prevT);
+        const outerR = p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
+        drawLabel(n, outerR, baseMapAlpha, getDimFactor(n));
+      });
+      drawRipples(t);
+      if (appState === 0) drawIdleText(t);
+      p.pop();
+
+      p.drawingContext.restore();
+
+      // Fixed rim
+      p.push();
+      p.noFill();
+      p.stroke(80, 110, 190, 0.18); p.strokeWeight(10);
+      p.ellipse(cx, cy, tR * 2);
+      p.stroke(80, 110, 190, 0.32); p.strokeWeight(1);
+      p.ellipse(cx, cy, tR * 2);
+      p.pop();
+
+      // Fixed needle
+      p.push();
+      p.fill(40, 60, 120, 0.75); p.noStroke();
+      p.triangle(cx - 5, cy - tR - 14, cx + 5, cy - tR - 14, cx, cy - tR - 2);
+      p.pop();
+
+      // Center spindle
+      p.push();
+      p.noStroke();
+      p.fill(80, 100, 160, 0.9); p.ellipse(cx, cy, 9);
+      p.fill(220, 225, 240, 1);  p.ellipse(cx, cy, 4);
+      p.pop();
+
+      drawSpinHUD(t);
+
+      // Inertia
+      if (!ttDragging) {
+        tableAngle += tableVelocity;
+        tableVelocity *= 0.975;
+        if (Math.abs(tableVelocity) < 0.00008) tableVelocity = 0;
       }
-    });
-
-    // ── Clip everything to the circular table ─────────────────────
-    p.drawingContext.save();
-    p.drawingContext.beginPath();
-    p.drawingContext.arc(cx, cy, tR, 0, Math.PI * 2);
-    p.drawingContext.clip();
-
-    // Table surface fill (white)
-    p.push();
-    p.noStroke();
-    p.fill(255);
-    p.ellipse(cx, cy, tR * 2);
-    p.pop();
-
-    // ── Rotating map content ──────────────────────────────────────
-    p.push();
-    p.translate(cx, cy);
-    p.rotate(tableAngle);
-    p.translate(-cx, -cy);
-
-    drawParticles(t);
-    drawGradientNodes(t, baseMapAlpha);
-    drawEdges(t, baseEdgeAlpha);
-    drawCoreDots(t, baseMapAlpha);
-    nodes.forEach(n => {
-      const cfg = NODE_CFG[n.type];
-      const active = Math.max(n.highlightT, n.prevT);
-      const outerR = p.lerp(cfg.outerR, cfg.hlOuterR, active) * getPulseFactor(n, t);
-      drawLabel(n, outerR, baseMapAlpha, getDimFactor(n));
-    });
-    drawRipples(t);
-    if (appState === 0) drawIdleText(t);
-
-    p.pop(); // end rotating content
-
-    // Restore clip
-    p.drawingContext.restore();
-
-    // ── Fixed table frame (outside clip) ─────────────────────────
-    // Outer ring / rim
-    p.push();
-    p.noFill();
-    p.stroke(80, 110, 190, 0.18);
-    p.strokeWeight(10);
-    p.ellipse(cx, cy, tR * 2);
-    p.strokeWeight(1);
-    p.stroke(80, 110, 190, 0.32);
-    p.ellipse(cx, cy, tR * 2);
-    p.pop();
-
-    // Fixed needle at top
-    p.push();
-    p.fill(40, 60, 120, 0.75);
-    p.noStroke();
-    p.triangle(cx - 5, cy - tR - 14, cx + 5, cy - tR - 14, cx, cy - tR - 2);
-    p.pop();
-
-    // Center spindle
-    p.push();
-    p.noStroke();
-    p.fill(80, 100, 160, 0.9);
-    p.ellipse(cx, cy, 9);
-    p.fill(220, 225, 240, 1);
-    p.ellipse(cx, cy, 4);
-    p.pop();
-
-    // Spin HUD
-    drawSpinHUD(t);
-
-    // Inertia decay
-    if (!ttDragging) {
-      tableAngle += tableVelocity;
-      tableVelocity *= 0.975;
-      if (Math.abs(tableVelocity) < 0.00008) tableVelocity = 0;
     }
   };
 
@@ -605,7 +623,7 @@ new p5(function(p) {
     p.fill(40, 70, 160, p.lerp(0.18, 0.45, breath));
     p.textSize(14);
     p.textAlign(p.CENTER, p.CENTER);
-    p.text('drag to spin  ·  click a genre', p.width / 2, p.height / 2);
+    p.text(IS_EMBED ? 'click a genre to explore' : 'drag to spin  ·  click a genre', p.width / 2, p.height / 2);
     p.pop();
   }
 
@@ -644,16 +662,21 @@ new p5(function(p) {
 
   // ── Mouse ─────────────────────────────────────────────────────────
   p.mousePressed = function() {
-    ttHasMoved = false;
-    ttDownX = p.mouseX;
-    ttDownY = p.mouseY;
-    ttLastMouseAngle = mouseAngleFromCenter();
-    ttLastTime = p.millis();
-    tableVelocity = 0;
-    ttDragging = true;
+    if (IS_EMBED) {
+      // original click behaviour
+      handleClick();
+    } else {
+      ttHasMoved = false;
+      ttDownX = p.mouseX; ttDownY = p.mouseY;
+      ttLastMouseAngle = mouseAngleFromCenter();
+      ttLastTime = p.millis();
+      tableVelocity = 0;
+      ttDragging = true;
+    }
   };
 
   p.mouseDragged = function() {
+    if (IS_EMBED) return;
     const now = p.millis();
     const ma = mouseAngleFromCenter();
     const delta = normAngleDelta(ma - ttLastMouseAngle);
@@ -666,10 +689,10 @@ new p5(function(p) {
   };
 
   p.mouseReleased = function() {
+    if (IS_EMBED) return;
     ttDragging = false;
     const dx = p.mouseX - ttDownX, dy = p.mouseY - ttDownY;
-    const moved = Math.sqrt(dx * dx + dy * dy);
-    if (!ttHasMoved || moved < 6) handleClick();
+    if (!ttHasMoved || Math.sqrt(dx * dx + dy * dy) < 6) handleClick();
   };
 
   // ── Keyboard ──────────────────────────────────────────────────────
