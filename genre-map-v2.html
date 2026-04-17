@@ -327,13 +327,12 @@ new p5(function(p) {
       const cx = p.width / 2, cy = p.height / 2;
       const tR = getTableR();
 
-      // Hover detection — inverse-rotate mouse into map space
-      const { rmx, rmy } = rotatedMouse();
+      // Hover detection — map is fixed, use raw mouse coords
       hovered = null;
       p.cursor(ttDragging ? 'grabbing' : p.ARROW);
       nodes.forEach(n => {
         const pulseR = getPulseOuterR(n, t);
-        if (p.dist(rmx, rmy, n.x, n.y) < pulseR * 0.35 + 10) {
+        if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < pulseR * 0.35 + 10) {
           hovered = n;
           if (!ttDragging) p.cursor(p.HAND);
         }
@@ -345,13 +344,10 @@ new p5(function(p) {
       p.drawingContext.arc(cx, cy, tR, 0, Math.PI * 2);
       p.drawingContext.clip();
 
+      // Table surface fill
       p.push(); p.noStroke(); p.fill(255); p.ellipse(cx, cy, tR * 2); p.pop();
 
-      // Rotating map content
-      p.push();
-      p.translate(cx, cy);
-      p.rotate(tableAngle);
-      p.translate(-cx, -cy);
+      // ── Fixed map content (projection stays still) ────────────
       drawParticles(t);
       drawGradientNodes(t, baseMapAlpha);
       drawEdges(t, baseEdgeAlpha);
@@ -365,17 +361,18 @@ new p5(function(p) {
       drawRipples(t);
       if (appState === 0) drawIdleText(t);
 
-      // Rotating needle — sweeps with the disc so rotation is obvious
+      // ── Rotating needle only (shows the disc is spinning) ─────
       p.push();
-      p.stroke(80, 110, 190, 0.55);
+      p.translate(cx, cy);
+      p.rotate(tableAngle);
+      p.translate(-cx, -cy);
+      p.stroke(80, 110, 190, 0.50);
       p.strokeWeight(1.5);
       p.strokeCap(p.ROUND);
-      p.line(cx, cy, cx, cy - tR * 0.88);
+      p.line(cx, cy, cx, cy - tR * 0.38);
       p.noStroke();
-      p.fill(80, 110, 190, 0.75);
-      p.ellipse(cx, cy - tR * 0.88, 7, 7);
-      p.pop();
-
+      p.fill(80, 110, 190, 0.70);
+      p.ellipse(cx, cy - tR * 0.38, 6, 6);
       p.pop();
 
       p.drawingContext.restore();
@@ -770,11 +767,10 @@ new p5(function(p) {
   // ── Click handler (used by mouseReleased when no real drag) ───────
   function handleClick() {
     const t = p.millis();
-    const { rmx, rmy } = rotatedMouse();
     let clicked = null;
     nodes.forEach(n => {
       const clickR = getPulseOuterR(n, t) * 0.35 + 10;
-      if (p.dist(rmx, rmy, n.x, n.y) < clickR) clicked = n;
+      if (p.dist(p.mouseX, p.mouseY, n.x, n.y) < clickR) clicked = n;
     });
     if (clicked) {
       if (appState === 0) { appState = 1; revealStart = t; }
